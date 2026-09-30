@@ -8,7 +8,8 @@
 // Settings
 // ============================================================
 
-const STORAGE_KEY = 'assignmentTracker.v1';
+const STORAGE_KEY = 'assignmentTracker.v2';
+const OLD_STORAGE_KEY = 'assignmentTracker.v1'; // before classes existed; moved into "My Class"
 
 // The order a status button cycles through. '' means "not marked yet".
 const STATUS_ORDER = ['', 'done', 'late', 'absent'];
@@ -25,25 +26,52 @@ const ICONS = {
 // App state
 // ============================================================
 
-// data = {
-//   students:    [{ id, name, sample? }],
-//   assignments: [{ id, name, date: 'YYYY-MM-DD', createdAt, sample? }],
-//   marks:       { [assignmentId]: { [studentId]: 'done' | 'late' | 'absent' } }
+// store = {
+//   currentClassId,
+//   classes: [{
+//     id, name, createdAt, sample?,
+//     students:    [{ id, name, sample? }],
+//     assignments: [{ id, name, date: 'YYYY-MM-DD', createdAt, sample? }],
+//     marks:       { [assignmentId]: { [studentId]: 'done' | 'late' | 'absent' } }
+//   }]
 // }
-let data = emptyData();
+let store = { classes: [], currentClassId: null };
+let data = null; // the class that's open right now (one of store.classes)
+let currentView = 'assignments';
 let currentAssignmentId = null; // assignment shown on the Assignments tab
 let currentStudentId = null; // student whose summary is open (null = the list)
 let editingAssignmentId = null; // null while the form is adding a new assignment
+let classFormMode = null; // 'new', 'rename', or 'copy' while the class form is open
 let toastTimer = null;
 
 const $ = (id) => document.getElementById(id);
 const el = {
+  tabs: $('tabs'),
   tabAssignments: $('tab-assignments'),
   tabStudents: $('tab-students'),
+  tabOverview: $('tab-overview'),
   viewAssignments: $('view-assignments'),
   viewStudents: $('view-students'),
+  viewOverview: $('view-overview'),
+  classContent: $('class-content'),
   sampleBanner: $('sample-banner'),
   removeSampleBtn: $('remove-sample-btn'),
+
+  classBar: $('class-bar'),
+  classSelect: $('class-select'),
+  renameClassBtn: $('rename-class-btn'),
+  copyClassBtn: $('copy-class-btn'),
+  deleteClassBtn: $('delete-class-btn'),
+  newClassBtn: $('new-class-btn'),
+  classForm: $('class-form'),
+  classFormTitle: $('class-form-title'),
+  classFormIntro: $('class-form-intro'),
+  className: $('class-name'),
+  copyOptions: $('copy-options'),
+  copySourceName: $('copy-source-name'),
+  copyStudents: $('copy-students'),
+  copyAssignments: $('copy-assignments'),
+  classCancel: $('class-cancel'),
 
   newAssignmentBtn: $('new-assignment-btn'),
   assignmentForm: $('assignment-form'),
@@ -84,6 +112,10 @@ const el = {
   summaryEmpty: $('summary-empty'),
   summaryList: $('summary-list'),
 
+  overviewEmpty: $('overview-empty'),
+  overviewArea: $('overview-area'),
+  overviewTable: $('overview-table'),
+
   exportBtn: $('export-btn'),
   importBtn: $('import-btn'),
   importFile: $('import-file'),
@@ -96,12 +128,12 @@ const el = {
 // Small helpers
 // ============================================================
 
-function emptyData() {
-  return { students: [], assignments: [], marks: {} };
-}
-
 function newId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function newClass(name) {
+  return { id: newId(), name, createdAt: Date.now(), students: [], assignments: [], marks: {} };
 }
 
 function findStudent(id) {
@@ -112,8 +144,8 @@ function findAssignment(id) {
   return data.assignments.find((a) => a.id === id);
 }
 
-function getMark(assignmentId, studentId) {
-  const marks = data.marks[assignmentId];
+function getMark(assignmentId, studentId, cls = data) {
+  const marks = cls.marks[assignmentId];
   const status = marks ? marks[studentId] : '';
   return status === 'done' || status === 'late' || status === 'absent' ? status : '';
 }
@@ -128,19 +160,27 @@ function nextStatus(status) {
   return STATUS_ORDER[(STATUS_ORDER.indexOf(status) + 1) % STATUS_ORDER.length];
 }
 
-function sortedStudents() {
-  return [...data.students].sort((a, b) =>
-    a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true })
-  );
+function byName(a, b) {
+  return a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true });
+}
+
+function sortedClasses() {
+  return [...store.classes].sort(byName);
+}
+
+function sortedStudents(cls = data) {
+  return [...cls.students].sort(byName);
 }
 
 // Newest first. Two assignments on the same day: the one added last comes first.
-function sortedAssignments() {
-  return [...data.assignments].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
+function sortedAssignments(cls = data) {
+  return [...cls.assignments].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
 }
 
 function hasSampleData() {
-  return data.students.some((s) => s.sample) || data.assignments.some((a) => a.sample);
+  return store.classes.some((c) =>
+    c.sample || c.students.some((s) => s.sample) || c.assignments.some((a) => a.sample)
+  );
 }
 
 function plural(count, word) {
@@ -154,9 +194,9 @@ function makeSpan(className, text) {
   return span;
 }
 
-// Shows a status as a colored box with an icon and a word.
-// Used for the big buttons, the legend, and the Student Summary.
-function fillStatus(target, status, blankText = '') {
+// Shows a status as a colored box with an icon and (unless iconOnly) a word.
+// Used for the big buttons, the legend, the Student Summary, and the Overview grid.
+function fillStatus(target, status, { blankText = '', iconOnly = false } = {}) {
   target.dataset.status = status || 'none';
   target.replaceChildren();
   if (status) {
@@ -165,7 +205,7 @@ function fillStatus(target, status, blankText = '') {
     target.append(icon);
   }
   const text = status ? STATUS_LABELS[status] : blankText;
-  if (text) target.append(makeSpan('', text));
+  if (text && !iconOnly) target.append(makeSpan('', text));
 }
 
 // ============================================================
@@ -232,43 +272,73 @@ function parseDate(text) {
 
 function loadData() {
   let saved;
+  let old = null;
   try {
     saved = localStorage.getItem(STORAGE_KEY);
+    if (saved === null) old = localStorage.getItem(OLD_STORAGE_KEY);
   } catch (err) {
-    data = makeSampleData();
+    store = makeSampleStore();
     showMessage('This browser is blocking the app from saving. Your changes will be lost when you close this tab.', true);
     return;
   }
 
-  // Very first visit: start with sample data to try out.
-  if (saved === null) {
-    data = makeSampleData();
+  if (saved === null && old !== null) {
+    // Data from before classes existed: move it into one class.
+    // (The old copy is left in place as a spare.)
+    try {
+      const cls = { ...newClass('My Class'), ...cleanClassData(JSON.parse(old)) };
+      const allSample = cls.students.every((s) => s.sample) && cls.assignments.every((a) => a.sample);
+      if (allSample && (cls.students.length || cls.assignments.length)) {
+        cls.name = 'Sample Class';
+        cls.sample = true;
+      }
+      store = { classes: [cls], currentClassId: cls.id };
+    } catch (err) {
+      store = { classes: [], currentClassId: null };
+    }
     saveData();
-    return;
-  }
-
-  try {
-    data = cleanData(JSON.parse(saved));
-  } catch (err) {
-    // Keep the unreadable copy so it isn't overwritten, then start empty.
-    try { localStorage.setItem(STORAGE_KEY + '.unreadable', saved); } catch (e) { /* ignore */ }
-    data = emptyData();
-    showMessage('Your saved data couldn’t be read, so the app started empty. If you have a backup, use “Import from CSV”.', true);
+  } else if (saved === null) {
+    // Very first visit: start with sample classes to try out.
+    store = makeSampleStore();
+    saveData();
+  } else {
+    try {
+      store = cleanStore(JSON.parse(saved));
+    } catch (err) {
+      // Keep the unreadable copy so it isn't overwritten, then start empty.
+      try { localStorage.setItem(STORAGE_KEY + '.unreadable', saved); } catch (e) { /* ignore */ }
+      store = { classes: [], currentClassId: null };
+      showMessage('Your saved data couldn’t be read, so the app started empty. If you have a backup, use “Import from CSV”.', true);
+    }
   }
 }
 
 function saveData() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
   } catch (err) {
     showMessage('Your last change couldn’t be saved in this browser. Use “Export to CSV” to keep a copy of your data.', true);
   }
 }
 
 // Makes sure saved data has the shape the app expects.
-function cleanData(saved) {
+function cleanStore(saved) {
+  if (!saved || typeof saved !== 'object' || !Array.isArray(saved.classes)) throw new Error('Not app data');
+  const classes = saved.classes
+    .filter((c) => c && typeof c.id === 'string' && typeof c.name === 'string')
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      createdAt: Number(c.createdAt) || 0,
+      ...(c.sample ? { sample: true } : {}),
+      ...cleanClassData(c),
+    }));
+  return { classes, currentClassId: typeof saved.currentClassId === 'string' ? saved.currentClassId : null };
+}
+
+function cleanClassData(saved) {
   if (!saved || typeof saved !== 'object') throw new Error('Not app data');
-  const clean = emptyData();
+  const clean = { students: [], assignments: [], marks: {} };
   if (Array.isArray(saved.students)) {
     clean.students = saved.students.filter((s) => s && typeof s.id === 'string' && typeof s.name === 'string');
   }
@@ -289,66 +359,189 @@ function cleanData(saved) {
 // Sample data (added only the very first time the app is opened)
 // ============================================================
 
-function makeSampleData() {
-  const sample = emptyData();
-  const names = ['Ava Martinez', 'Ben Carter', 'Chloe Nguyen', 'Diego Ramirez', 'Emma Johnson', 'Liam Patel'];
-  sample.students = names.map((name) => ({ id: newId(), name, sample: true }));
+function makeSampleStore() {
+  // One letter per student: D = Done, L = Late, A = Absent, - = not marked
+  const period1 = makeSampleClass('Sample: Period 1',
+    ['Ava Martinez', 'Ben Carter', 'Chloe Nguyen', 'Diego Ramirez', 'Emma Johnson', 'Liam Patel'],
+    ['DDLDDA', 'DLDDAD', 'DDDLDD', 'DD-L-A']);
+  const period2 = makeSampleClass('Sample: Period 2',
+    ['Noah Kim', 'Olivia Brown', 'Mateo Silva', 'Sophia Lee', 'Jackson Wright'],
+    ['DDDLD', 'ADDDL', 'DLDAD', '-D-DD']);
+  return { classes: [period1, period2], currentClassId: period1.id };
+}
 
-  // [name, days ago, one letter per student above]  D = Done, L = Late, A = Absent, - = not marked
+function makeSampleClass(className, studentNames, patterns) {
+  const cls = { ...newClass(className), sample: true };
+  cls.students = studentNames.map((name) => ({ id: newId(), name, sample: true }));
+
   const assignments = [
-    ['Reading Log, Week 1', 12, 'DDLDDA'],
-    ['Fractions Worksheet', 8, 'DLDDAD'],
-    ['Science Lab Report', 5, 'DDDLDD'],
-    ['Vocabulary Quiz Corrections', 1, 'DD-L-A'],
+    ['Reading Log, Week 1', 12],
+    ['Fractions Worksheet', 8],
+    ['Science Lab Report', 5],
+    ['Vocabulary Quiz Corrections', 1],
   ];
   const letters = { D: 'done', L: 'late', A: 'absent' };
   const now = Date.now();
 
-  assignments.forEach(([name, ago, pattern], index) => {
+  assignments.forEach(([name, ago], index) => {
     const assignment = { id: newId(), name, date: daysAgo(ago), createdAt: now + index, sample: true };
-    sample.assignments.push(assignment);
-    sample.marks[assignment.id] = {};
-    [...pattern].forEach((letter, studentIndex) => {
-      if (letters[letter]) sample.marks[assignment.id][sample.students[studentIndex].id] = letters[letter];
+    cls.assignments.push(assignment);
+    cls.marks[assignment.id] = {};
+    [...patterns[index]].forEach((letter, studentIndex) => {
+      if (letters[letter]) cls.marks[assignment.id][cls.students[studentIndex].id] = letters[letter];
     });
   });
-  return sample;
+  return cls;
 }
 
 function removeSampleData() {
-  const ok = confirm('Remove the sample students and assignments?\n\nAnything you added yourself will stay.');
+  const ok = confirm('Remove the sample classes, students, and assignments?\n\nAnything you added yourself will stay.');
   if (!ok) return;
 
-  const sampleStudentIds = data.students.filter((s) => s.sample).map((s) => s.id);
-  const sampleAssignmentIds = data.assignments.filter((a) => a.sample).map((a) => a.id);
-
-  data.students = data.students.filter((s) => !s.sample);
-  data.assignments = data.assignments.filter((a) => !a.sample);
-  sampleAssignmentIds.forEach((id) => delete data.marks[id]);
-  for (const marks of Object.values(data.marks)) {
-    sampleStudentIds.forEach((id) => delete marks[id]);
+  for (const cls of store.classes) {
+    const sampleStudentIds = cls.students.filter((s) => s.sample).map((s) => s.id);
+    cls.assignments.filter((a) => a.sample).forEach((a) => delete cls.marks[a.id]);
+    cls.students = cls.students.filter((s) => !s.sample);
+    cls.assignments = cls.assignments.filter((a) => !a.sample);
+    for (const marks of Object.values(cls.marks)) {
+      sampleStudentIds.forEach((id) => delete marks[id]);
+    }
   }
+  // A sample class is removed too, unless you added your own students or assignments to it.
+  store.classes = store.classes.filter((c) => !(c.sample && !c.students.length && !c.assignments.length));
+  store.classes.forEach((c) => delete c.sample);
 
-  if (editingAssignmentId && !findAssignment(editingAssignmentId)) closeAssignmentForm();
+  openClass(store.currentClassId);
   saveData();
   renderAll();
   showMessage('Sample data removed.');
 }
 
 // ============================================================
-// Switching between the two tabs
+// Classes
+// ============================================================
+
+// Makes a class the open one. Falls back to the first class (or none).
+function openClass(id) {
+  const cls = store.classes.find((c) => c.id === id) || sortedClasses()[0] || null;
+  if (cls !== data) {
+    currentAssignmentId = null;
+    currentStudentId = null;
+    closeAssignmentForm();
+    closeRenameForm();
+    el.addStudentNote.textContent = '';
+  }
+  data = cls;
+  store.currentClassId = cls ? cls.id : null;
+}
+
+function switchClass(id) {
+  openClass(id);
+  closeClassForm();
+  saveData(); // remembers which class was open
+  renderAll();
+}
+
+function renderClassBar() {
+  const hasClasses = store.classes.length > 0;
+  el.classBar.hidden = !hasClasses;
+  if (!hasClasses) return;
+  el.classSelect.replaceChildren(...sortedClasses().map((c) => new Option(c.name, c.id)));
+  el.classSelect.value = data.id;
+}
+
+function openClassForm(mode) {
+  classFormMode = mode;
+  const titles = { new: 'New class', rename: 'Rename class', copy: 'Copy class' };
+  el.classFormTitle.textContent = titles[mode];
+  el.classFormIntro.hidden = store.classes.length > 0;
+  el.classCancel.hidden = store.classes.length === 0;
+  el.copyOptions.hidden = mode !== 'copy';
+  if (mode === 'rename') el.className.value = data.name;
+  else if (mode === 'copy') el.className.value = `Copy of ${data.name}`;
+  else el.className.value = '';
+  if (mode === 'copy') {
+    el.copySourceName.textContent = data.name;
+    el.copyStudents.checked = false;
+    el.copyAssignments.checked = true;
+  }
+  el.classForm.hidden = false;
+  el.className.focus();
+  el.className.select();
+}
+
+function closeClassForm() {
+  classFormMode = null;
+  el.classForm.hidden = true;
+}
+
+function saveClassForm(event) {
+  event.preventDefault();
+  const name = el.className.value.trim();
+  if (!name) {
+    el.className.value = '';
+    el.className.reportValidity();
+    return;
+  }
+
+  if (classFormMode === 'rename' && data) {
+    data.name = name;
+    delete data.sample; // once renamed, it's yours
+    closeClassForm();
+    saveData();
+    renderAll();
+    return;
+  }
+
+  const cls = newClass(name);
+  if (classFormMode === 'copy' && data) {
+    // Copies names and dates only. Statuses always start blank.
+    if (el.copyStudents.checked) {
+      cls.students = data.students.map((s) => ({ id: newId(), name: s.name }));
+    }
+    if (el.copyAssignments.checked) {
+      cls.assignments = data.assignments.map((a) => ({ id: newId(), name: a.name, date: a.date, createdAt: a.createdAt }));
+    }
+  }
+  store.classes.push(cls);
+  const copied = classFormMode === 'copy';
+  switchClass(cls.id);
+  showMessage(copied ? `Created “${name}” as a copy.` : `Created “${name}”.`);
+}
+
+function deleteCurrentClass() {
+  if (!data) return;
+  const ok = confirm(
+    `Delete the class “${data.name}”?\n\n` +
+    `Its ${plural(data.students.length, 'student')}, ${plural(data.assignments.length, 'assignment')}, ` +
+    'and all their marks will be deleted. This can’t be undone.'
+  );
+  if (!ok) return;
+  const name = data.name;
+  store.classes = store.classes.filter((c) => c !== data);
+  switchClass(null);
+  showMessage(`The class “${name}” was deleted.`);
+}
+
+// ============================================================
+// Switching between the tabs
 // ============================================================
 
 function showView(view) {
-  const onAssignments = view === 'assignments';
-  el.viewAssignments.hidden = !onAssignments;
-  el.viewStudents.hidden = onAssignments;
-  const activeTab = onAssignments ? el.tabAssignments : el.tabStudents;
-  const otherTab = onAssignments ? el.tabStudents : el.tabAssignments;
-  activeTab.setAttribute('aria-current', 'page');
-  otherTab.removeAttribute('aria-current');
+  currentView = view;
+  const views = {
+    assignments: [el.tabAssignments, el.viewAssignments],
+    students: [el.tabStudents, el.viewStudents],
+    overview: [el.tabOverview, el.viewOverview],
+  };
+  for (const [name, [tab, section]] of Object.entries(views)) {
+    section.hidden = name !== view;
+    if (name === view) tab.setAttribute('aria-current', 'page');
+    else tab.removeAttribute('aria-current');
+  }
+  document.body.classList.toggle('wide', view === 'overview');
 
-  if (!onAssignments) {
+  if (view === 'students') {
     // The Students tab always opens on the list of names.
     currentStudentId = null;
     closeRenameForm();
@@ -359,9 +552,20 @@ function showView(view) {
 }
 
 function renderAll() {
+  renderClassBar();
   el.sampleBanner.hidden = !hasSampleData();
+
+  // No classes yet: the only thing to do is create one.
+  const hasClass = Boolean(data);
+  el.classContent.hidden = !hasClass;
+  el.tabs.hidden = !hasClass;
+  if (!hasClass) {
+    if (classFormMode !== 'new') openClassForm('new');
+    return;
+  }
   renderAssignmentsView();
   renderStudentsView();
+  renderOverview();
 }
 
 // ============================================================
@@ -579,7 +783,7 @@ function renderStudentSummary(student) {
       const row = document.createElement('li');
       row.className = 'summary-row';
       const chip = makeSpan('chip', '');
-      fillStatus(chip, status, 'Not marked');
+      fillStatus(chip, status, { blankText: 'Not marked' });
       row.append(
         makeSpan('summary-date', formatShortDate(assignment.date)),
         makeSpan('summary-assignment', assignment.name),
@@ -670,30 +874,108 @@ function deleteCurrentStudent() {
 }
 
 // ============================================================
+// Overview tab: every student and assignment in one grid
+// ============================================================
+
+function renderOverview() {
+  const students = sortedStudents();
+  const assignments = sortedAssignments();
+
+  if (!students.length || !assignments.length) {
+    el.overviewEmpty.textContent = !students.length
+      ? 'Add students on the Students tab to see them here.'
+      : 'Add an assignment on the Assignments tab to see it here.';
+    el.overviewEmpty.hidden = false;
+    el.overviewArea.hidden = true;
+    el.overviewTable.replaceChildren();
+    return;
+  }
+  el.overviewEmpty.hidden = true;
+  el.overviewArea.hidden = false;
+
+  // Top row: one column per assignment, newest on the left.
+  const headRow = document.createElement('tr');
+  const corner = document.createElement('th');
+  corner.scope = 'col';
+  corner.textContent = 'Student';
+  headRow.append(corner);
+  for (const assignment of assignments) {
+    const th = document.createElement('th');
+    th.scope = 'col';
+    th.title = `${assignment.name} (${formatShortDate(assignment.date)})`;
+    th.append(makeSpan('grid-name', assignment.name), makeSpan('grid-date', formatShortDate(assignment.date)));
+    headRow.append(th);
+  }
+  const head = document.createElement('thead');
+  head.append(headRow);
+
+  // One row per student.
+  const body = document.createElement('tbody');
+  for (const student of students) {
+    const row = document.createElement('tr');
+    const nameCell = document.createElement('th');
+    nameCell.scope = 'row';
+    nameCell.textContent = student.name;
+    row.append(nameCell);
+
+    for (const assignment of assignments) {
+      const cell = document.createElement('td');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'grid-cell';
+      paintGridCell(button, student, assignment, getMark(assignment.id, student.id));
+      button.addEventListener('click', () => {
+        const status = nextStatus(getMark(assignment.id, student.id));
+        setMark(assignment.id, student.id, status);
+        saveData();
+        paintGridCell(button, student, assignment, status);
+      });
+      cell.append(button);
+      row.append(cell);
+    }
+    body.append(row);
+  }
+  el.overviewTable.replaceChildren(head, body);
+}
+
+function paintGridCell(button, student, assignment, status) {
+  fillStatus(button, status, { iconOnly: true });
+  const label = `${student.name}, ${assignment.name}: ${STATUS_LABELS[status]}`;
+  button.setAttribute('aria-label', label);
+  button.title = label;
+}
+
+// ============================================================
 // Export and import (CSV)
 // ============================================================
 //
-// The file looks like this, one column per assignment (oldest on the left):
+// The file holds every class, one after another. Each class looks like this,
+// with one column per assignment (oldest on the left):
 //
+//   Class,Period 1
 //   Assignment,Book Report,Math Worksheet
 //   Date,2026-09-26,2026-09-29
 //   Maya Lopez,Done,Late
 //   Jordan Kim,,Absent
 
 function exportCsv() {
-  const assignments = sortedAssignments().reverse();
-  const students = sortedStudents();
-  const rows = [
-    ['Assignment', ...assignments.map((a) => a.name)],
-    ['Date', ...assignments.map((a) => a.date)],
-    ...students.map((s) => [
-      s.name,
-      ...assignments.map((a) => {
-        const status = getMark(a.id, s.id);
-        return status ? STATUS_LABELS[status] : '';
-      }),
-    ]),
-  ];
+  const rows = [];
+  sortedClasses().forEach((cls, index) => {
+    if (index > 0) rows.push([]); // a blank line between classes
+    const assignments = sortedAssignments(cls).reverse();
+    rows.push(['Class', cls.name]);
+    rows.push(['Assignment', ...assignments.map((a) => a.name)]);
+    rows.push(['Date', ...assignments.map((a) => a.date)]);
+    for (const student of sortedStudents(cls)) {
+      rows.push([
+        student.name,
+        ...assignments.map((a) => {
+          const status = getMark(a.id, student.id, cls);
+          return status ? STATUS_LABELS[status] : '';
+        }),
+      ]);
+    }
+  });
   const csv = rows.map((row) => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
 
   // The "﻿" at the start helps spreadsheet programs read accented names correctly.
@@ -707,7 +989,7 @@ function exportCsv() {
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 
-  showMessage('Your backup file was downloaded. Keep it somewhere safe, like Google Drive.');
+  showMessage('Your backup file (all classes) was downloaded. Keep it somewhere safe, like Google Drive.');
 }
 
 function csvCell(value) {
@@ -752,19 +1034,48 @@ function parseCsv(text) {
   return rows;
 }
 
-// Reads a backup file into app data. Throws an Error with a friendly message if it can't.
-function parseBackup(text) {
-  const cellText = (row, index) => (row[index] || '').trim();
-  const rows = parseCsv(text).filter((row) => row.some((cell) => cell.trim() !== ''));
+const cellText = (row, index) => (row[index] || '').trim();
 
+// Reads a backup file. Throws an Error with a friendly message if it can't.
+// Returns { classes, fullBackup, unrecognized }. fullBackup is false for an
+// older one-class file (no "Class" rows), which gets added as a new class.
+function parseBackup(text) {
+  const rows = parseCsv(text).filter((row) => row.some((cell) => cell.trim() !== ''));
+  const firstCell = rows.length ? cellText(rows[0], 0).toLowerCase() : '';
+
+  const blocks = [];
+  if (firstCell === 'class') {
+    for (const row of rows) {
+      if (cellText(row, 0).toLowerCase() === 'class') blocks.push({ name: cellText(row, 1) || 'Untitled class', rows: [] });
+      else blocks[blocks.length - 1].rows.push(row);
+    }
+  } else {
+    blocks.push({ name: null, rows });
+  }
+
+  let unrecognized = 0;
+  const classes = blocks.map((block) => {
+    try {
+      const result = parseClassRows(block.rows);
+      unrecognized += result.unrecognized;
+      return { ...newClass(block.name || 'Imported class'), ...result.classData };
+    } catch (err) {
+      throw new Error(block.name ? `In the class “${block.name}”: ${err.message}` : err.message);
+    }
+  });
+  return { classes, fullBackup: firstCell === 'class', unrecognized };
+}
+
+// Reads one class: an "Assignment" row, a "Date" row, then one row per student.
+function parseClassRows(rows) {
   if (rows.length < 2 ||
       cellText(rows[0], 0).toLowerCase() !== 'assignment' ||
       cellText(rows[1], 0).toLowerCase() !== 'date') {
-    throw new Error('This file doesn’t look like a backup from this app. The first two rows should start with “Assignment” and “Date”.');
+    throw new Error('This file doesn’t look like a backup from this app. Each class should start with an “Assignment” row and a “Date” row.');
   }
 
   const [nameRow, dateRow, ...studentRows] = rows;
-  const imported = emptyData();
+  const classData = { students: [], assignments: [], marks: {} };
   const columns = [];
   const width = Math.max(nameRow.length, dateRow.length);
   const now = Date.now();
@@ -779,8 +1090,8 @@ function parseBackup(text) {
     if (!date) throw new Error(`The date for ${label} (“${rawDate}”) couldn’t be read. Dates should look like 2026-09-29.`);
 
     const assignment = { id: newId(), name: name || 'Untitled assignment', date, createdAt: now + col };
-    imported.assignments.push(assignment);
-    imported.marks[assignment.id] = {};
+    classData.assignments.push(assignment);
+    classData.marks[assignment.id] = {};
     columns.push({ col, id: assignment.id });
   }
 
@@ -789,15 +1100,15 @@ function parseBackup(text) {
     const name = cellText(row, 0);
     if (!name) continue;
     const student = { id: newId(), name };
-    imported.students.push(student);
+    classData.students.push(student);
     for (const { col, id } of columns) {
       const value = cellText(row, col).toLowerCase();
       if (!value || value === 'not marked') continue;
-      if (value === 'done' || value === 'late' || value === 'absent') imported.marks[id][student.id] = value;
+      if (value === 'done' || value === 'late' || value === 'absent') classData.marks[id][student.id] = value;
       else unrecognized += 1;
     }
   }
-  return { imported, unrecognized };
+  return { classData, unrecognized };
 }
 
 async function importCsv() {
@@ -821,19 +1132,29 @@ async function importCsv() {
     return;
   }
 
-  const { imported, unrecognized } = result;
-  const summary = `${plural(imported.students.length, 'student')} and ${plural(imported.assignments.length, 'assignment')}`;
-  const ok = confirm(
-    `Replace everything in the app with this backup (${summary})?\n\n` +
-    'What’s in the app right now will be replaced. This can’t be undone.'
-  );
-  if (!ok) return;
+  const { classes, fullBackup, unrecognized } = result;
+  const describe = (cls) => `${plural(cls.students.length, 'student')} and ${plural(cls.assignments.length, 'assignment')}`;
+  let summary;
 
-  data = imported;
-  currentAssignmentId = null;
-  currentStudentId = null;
-  closeAssignmentForm();
-  closeRenameForm();
+  if (fullBackup) {
+    summary = `${classes.length} ${classes.length === 1 ? 'class' : 'classes'}`;
+    const ok = confirm(
+      `Replace everything in the app with this backup (${summary})?\n\n` +
+      'All the classes in the app right now will be replaced. This can’t be undone.'
+    );
+    if (!ok) return;
+    store.classes = classes;
+  } else {
+    // An older one-class file: add it alongside your other classes.
+    summary = describe(classes[0]);
+    const ok = confirm(`Add this file as a new class called “Imported class” (${summary})?\n\nYour other classes won’t change. You can rename it afterward.`);
+    if (!ok) return;
+    store.classes.push(classes[0]);
+  }
+
+  data = null; // so openClass resets the screen
+  openClass(classes[0].id);
+  closeClassForm();
   saveData();
   renderAll();
 
@@ -867,6 +1188,7 @@ function hideMessage() {
 function init() {
   el.tabAssignments.addEventListener('click', () => showView('assignments'));
   el.tabStudents.addEventListener('click', () => showView('students'));
+  el.tabOverview.addEventListener('click', () => showView('overview'));
   document.querySelectorAll('[data-go-students]').forEach((button) => {
     button.addEventListener('click', () => {
       showView('students');
@@ -874,6 +1196,14 @@ function init() {
     });
   });
   el.removeSampleBtn.addEventListener('click', removeSampleData);
+
+  el.classSelect.addEventListener('change', () => switchClass(el.classSelect.value));
+  el.newClassBtn.addEventListener('click', () => openClassForm('new'));
+  el.renameClassBtn.addEventListener('click', () => openClassForm('rename'));
+  el.copyClassBtn.addEventListener('click', () => openClassForm('copy'));
+  el.deleteClassBtn.addEventListener('click', deleteCurrentClass);
+  el.classForm.addEventListener('submit', saveClassForm);
+  el.classCancel.addEventListener('click', closeClassForm);
 
   el.newAssignmentBtn.addEventListener('click', () => openAssignmentForm(null));
   el.assignmentForm.addEventListener('submit', saveAssignmentForm);
@@ -902,11 +1232,14 @@ function init() {
   el.importFile.addEventListener('change', importCsv);
   el.toastClose.addEventListener('click', hideMessage);
 
-  // If the app is open in two tabs, keep them in sync.
+  // If the app is open in two tabs, keep them in sync (each tab keeps its own open class).
   window.addEventListener('storage', (event) => {
     if (event.key !== STORAGE_KEY || event.newValue === null) return;
     try {
-      data = cleanData(JSON.parse(event.newValue));
+      const openId = data ? data.id : null;
+      store = cleanStore(JSON.parse(event.newValue));
+      data = store.classes.find((c) => c.id === openId) || null;
+      openClass(openId);
       renderAll();
     } catch (err) { /* ignore */ }
   });
@@ -914,6 +1247,7 @@ function init() {
   document.querySelectorAll('[data-legend]').forEach((chip) => fillStatus(chip, chip.dataset.legend));
 
   loadData();
+  openClass(store.currentClassId);
   renderAll();
 }
 

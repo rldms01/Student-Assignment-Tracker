@@ -11,123 +11,175 @@
   <header class="topbar">
     <div class="wrap topbar-inner">
       <h1 class="app-title">Assignment Tracker</h1>
-      <nav class="tabs" aria-label="Main">
+      <nav id="tabs" class="tabs" aria-label="Main">
         <button type="button" class="tab" id="tab-assignments" aria-current="page">Assignments</button>
         <button type="button" class="tab" id="tab-students">Students</button>
+        <button type="button" class="tab" id="tab-overview">Overview</button>
       </nav>
+    </div>
+
+    <!-- Class picker: every class has its own students, assignments, and marks -->
+    <div id="class-bar" class="wrap class-bar">
+      <label for="class-select" class="class-label">Class</label>
+      <select id="class-select" class="class-select"></select>
+      <div class="small-actions">
+        <button type="button" id="rename-class-btn" class="text-btn">Rename</button>
+        <button type="button" id="copy-class-btn" class="text-btn">Copy</button>
+        <button type="button" id="delete-class-btn" class="text-btn">Delete</button>
+      </div>
+      <button type="button" id="new-class-btn" class="btn class-new-btn">+ New class</button>
     </div>
   </header>
 
   <main class="wrap">
+    <!-- Used for adding, renaming, and copying a class -->
+    <form id="class-form" class="card form" hidden>
+      <h2 id="class-form-title" class="form-title">New class</h2>
+      <p id="class-form-intro" class="form-intro" hidden>Welcome! Start by creating a class, for example “Period 1”. You can add more classes any time.</p>
+      <label class="field">
+        <span>Class name</span>
+        <input id="class-name" type="text" required maxlength="60" autocomplete="off" placeholder="e.g. Period 1">
+      </label>
+      <fieldset id="copy-options" class="copy-options" hidden>
+        <legend>What to copy from “<span id="copy-source-name"></span>”</legend>
+        <label class="check"><input type="checkbox" id="copy-students"> Students</label>
+        <label class="check"><input type="checkbox" id="copy-assignments" checked> Assignments (with their dates)</label>
+        <p class="hint">Statuses are not copied. Everyone starts blank in the new class.</p>
+      </fieldset>
+      <div class="form-buttons">
+        <button type="submit" class="btn btn-primary">Save</button>
+        <button type="button" id="class-cancel" class="btn">Cancel</button>
+      </div>
+    </form>
+
     <!-- Shown only while the sample (practice) data is in the app -->
     <div id="sample-banner" class="banner" hidden>
-      <p>You're looking at <strong>sample students and assignments</strong> so you can try things out.</p>
+      <p>You're looking at <strong>sample classes</strong> so you can try things out.</p>
       <button type="button" id="remove-sample-btn" class="btn">Remove sample data</button>
     </div>
 
-    <!-- ================= ASSIGNMENTS VIEW ================= -->
-    <section id="view-assignments" aria-label="Assignments">
-      <div class="view-actions">
-        <button type="button" id="new-assignment-btn" class="btn btn-primary">+ New assignment</button>
-      </div>
-
-      <!-- Used for both adding and editing an assignment -->
-      <form id="assignment-form" class="card form" hidden>
-        <h2 id="assignment-form-title" class="form-title">New assignment</h2>
-        <label class="field">
-          <span>Assignment name</span>
-          <input id="assignment-name" type="text" required maxlength="120" autocomplete="off" placeholder="e.g. Chapter 3 Questions">
-        </label>
-        <label class="field">
-          <span>Date given</span>
-          <input id="assignment-date" type="date" required>
-        </label>
-        <div class="form-buttons">
-          <button type="submit" class="btn btn-primary">Save</button>
-          <button type="button" id="assignment-cancel" class="btn">Cancel</button>
+    <div id="class-content">
+      <!-- ================= ASSIGNMENTS VIEW ================= -->
+      <section id="view-assignments" aria-label="Assignments">
+        <div class="view-actions">
+          <button type="button" id="new-assignment-btn" class="btn btn-primary">+ New assignment</button>
         </div>
-      </form>
 
-      <div id="get-started" class="empty" hidden>
-        <p><strong>Welcome!</strong> Start by adding your students on the Students tab. Then come back here and click “+ New assignment”.</p>
-        <button type="button" class="btn" data-go-students>Go to Students</button>
-      </div>
-      <p id="no-assignments" class="empty" hidden>No assignments yet. Click “+ New assignment” to add your first one.</p>
-
-      <div id="assignment-area" hidden>
-        <div class="card assignment-card">
-          <div class="picker">
-            <button type="button" id="older-btn" class="btn arrow-btn" aria-label="Older assignment">‹<span class="arrow-word">&nbsp;Older</span></button>
-            <label for="assignment-select" class="visually-hidden">Assignment</label>
-            <select id="assignment-select" class="assignment-select"></select>
-            <button type="button" id="newer-btn" class="btn arrow-btn" aria-label="Newer assignment"><span class="arrow-word">Newer&nbsp;</span>›</button>
+        <!-- Used for both adding and editing an assignment -->
+        <form id="assignment-form" class="card form" hidden>
+          <h2 id="assignment-form-title" class="form-title">New assignment</h2>
+          <label class="field">
+            <span>Assignment name</span>
+            <input id="assignment-name" type="text" required maxlength="120" autocomplete="off" placeholder="e.g. Chapter 3 Questions">
+          </label>
+          <label class="field">
+            <span>Date given</span>
+            <input id="assignment-date" type="date" required>
+          </label>
+          <div class="form-buttons">
+            <button type="submit" class="btn btn-primary">Save</button>
+            <button type="button" id="assignment-cancel" class="btn">Cancel</button>
           </div>
-          <div class="assignment-meta">
-            <p id="assignment-date-text" class="assignment-date"></p>
-            <div class="small-actions">
-              <button type="button" id="edit-assignment-btn" class="text-btn">Edit</button>
-              <button type="button" id="delete-assignment-btn" class="text-btn">Delete</button>
+        </form>
+
+        <div id="get-started" class="empty" hidden>
+          <p>This class has no students yet. Add them on the Students tab, then come back here and click “+ New assignment”.</p>
+          <button type="button" class="btn" data-go-students>Go to Students</button>
+        </div>
+        <p id="no-assignments" class="empty" hidden>No assignments yet. Click “+ New assignment” to add your first one.</p>
+
+        <div id="assignment-area" hidden>
+          <div class="card assignment-card">
+            <div class="picker">
+              <button type="button" id="older-btn" class="btn arrow-btn" aria-label="Older assignment">‹<span class="arrow-word">&nbsp;Older</span></button>
+              <label for="assignment-select" class="visually-hidden">Assignment</label>
+              <select id="assignment-select" class="assignment-select"></select>
+              <button type="button" id="newer-btn" class="btn arrow-btn" aria-label="Newer assignment"><span class="arrow-word">Newer&nbsp;</span>›</button>
+            </div>
+            <div class="assignment-meta">
+              <p id="assignment-date-text" class="assignment-date"></p>
+              <div class="small-actions">
+                <button type="button" id="edit-assignment-btn" class="text-btn">Edit</button>
+                <button type="button" id="delete-assignment-btn" class="text-btn">Delete</button>
+              </div>
             </div>
           </div>
+
+          <!-- Legend: app.js fills in each color chip -->
+          <p id="legend" class="legend">
+            <span class="legend-lead">Tap to change:</span>
+            <span class="legend-item"><span class="chip" data-legend=""></span>Not marked</span>
+            <span class="legend-arrow" aria-hidden="true">→</span>
+            <span class="legend-item"><span class="chip" data-legend="done"></span></span>
+            <span class="legend-arrow" aria-hidden="true">→</span>
+            <span class="legend-item"><span class="chip" data-legend="late"></span></span>
+            <span class="legend-arrow" aria-hidden="true">→</span>
+            <span class="legend-item"><span class="chip" data-legend="absent"></span></span>
+            <span class="legend-arrow" aria-hidden="true">→</span>
+            <span class="legend-item">blank</span>
+          </p>
+
+          <div id="no-students-note" class="empty" hidden>
+            <p>No students in this class yet. Add your class list on the Students tab.</p>
+            <button type="button" class="btn" data-go-students>Add students</button>
+          </div>
+          <ul id="marking-list" class="list"></ul>
+        </div>
+      </section>
+
+      <!-- ================= STUDENTS VIEW ================= -->
+      <section id="view-students" aria-label="Students" hidden>
+        <div id="student-list-panel">
+          <form id="add-student-form" class="inline-form">
+            <label for="new-student-name" class="visually-hidden">Student name</label>
+            <input id="new-student-name" type="text" required maxlength="80" autocomplete="off" placeholder="Type a student's name">
+            <button type="submit" class="btn btn-primary">Add</button>
+          </form>
+          <p id="add-student-note" class="note" aria-live="polite"></p>
+          <p id="student-count" class="list-heading"></p>
+          <p id="no-students" class="empty" hidden>No students in this class yet. Type a name above and press Add.</p>
+          <ul id="student-list" class="list"></ul>
         </div>
 
-        <!-- Legend: app.js fills in each color chip -->
-        <p id="legend" class="legend">
-          <span class="legend-lead">Tap to change:</span>
-          <span class="legend-item"><span class="chip" data-legend=""></span>Not marked</span>
-          <span class="legend-arrow" aria-hidden="true">→</span>
-          <span class="legend-item"><span class="chip" data-legend="done"></span></span>
-          <span class="legend-arrow" aria-hidden="true">→</span>
-          <span class="legend-item"><span class="chip" data-legend="late"></span></span>
-          <span class="legend-arrow" aria-hidden="true">→</span>
-          <span class="legend-item"><span class="chip" data-legend="absent"></span></span>
-          <span class="legend-arrow" aria-hidden="true">→</span>
-          <span class="legend-item">blank</span>
-        </p>
-
-        <div id="no-students-note" class="empty" hidden>
-          <p>No students yet. Add your class list on the Students tab.</p>
-          <button type="button" class="btn" data-go-students>Add students</button>
+        <!-- Student Summary: one student's assignments and statuses -->
+        <div id="student-summary" hidden>
+          <button type="button" id="back-to-students" class="btn">‹ All students</button>
+          <div id="summary-head" class="summary-head">
+            <h2 id="summary-name" class="summary-name" tabindex="-1"></h2>
+            <div class="small-actions">
+              <button type="button" id="rename-student-btn" class="text-btn">Rename</button>
+              <button type="button" id="delete-student-btn" class="text-btn">Delete</button>
+            </div>
+          </div>
+          <form id="rename-form" class="inline-form rename-form" hidden>
+            <label for="rename-input" class="visually-hidden">New name</label>
+            <input id="rename-input" type="text" required maxlength="80" autocomplete="off">
+            <button type="submit" class="btn btn-primary">Save</button>
+            <button type="button" id="rename-cancel" class="btn">Cancel</button>
+          </form>
+          <p id="summary-counts" class="summary-counts"></p>
+          <p id="summary-empty" class="empty" hidden>No assignments yet.</p>
+          <ul id="summary-list" class="list"></ul>
         </div>
-        <ul id="marking-list" class="list"></ul>
-      </div>
-    </section>
+      </section>
 
-    <!-- ================= STUDENTS VIEW ================= -->
-    <section id="view-students" aria-label="Students" hidden>
-      <div id="student-list-panel">
-        <form id="add-student-form" class="inline-form">
-          <label for="new-student-name" class="visually-hidden">Student name</label>
-          <input id="new-student-name" type="text" required maxlength="80" autocomplete="off" placeholder="Type a student's name">
-          <button type="submit" class="btn btn-primary">Add</button>
-        </form>
-        <p id="add-student-note" class="note" aria-live="polite"></p>
-        <p id="student-count" class="list-heading"></p>
-        <p id="no-students" class="empty" hidden>No students yet. Type a name above and press Add.</p>
-        <ul id="student-list" class="list"></ul>
-      </div>
-
-      <!-- Student Summary: one student's assignments and statuses -->
-      <div id="student-summary" hidden>
-        <button type="button" id="back-to-students" class="btn">‹ All students</button>
-        <div id="summary-head" class="summary-head">
-          <h2 id="summary-name" class="summary-name" tabindex="-1"></h2>
-          <div class="small-actions">
-            <button type="button" id="rename-student-btn" class="text-btn">Rename</button>
-            <button type="button" id="delete-student-btn" class="text-btn">Delete</button>
+      <!-- ================= OVERVIEW VIEW ================= -->
+      <section id="view-overview" aria-label="Overview" hidden>
+        <p id="overview-empty" class="empty" hidden></p>
+        <div id="overview-area" hidden>
+          <p class="legend">
+            <span class="legend-lead">Click a box to change it:</span>
+            <span class="legend-item"><span class="chip" data-legend="done"></span></span>
+            <span class="legend-item"><span class="chip" data-legend="late"></span></span>
+            <span class="legend-item"><span class="chip" data-legend="absent"></span></span>
+            <span class="legend-item"><span class="chip" data-legend=""></span>Not marked</span>
+          </p>
+          <div class="grid-scroll">
+            <table id="overview-table" class="grid"></table>
           </div>
         </div>
-        <form id="rename-form" class="inline-form rename-form" hidden>
-          <label for="rename-input" class="visually-hidden">New name</label>
-          <input id="rename-input" type="text" required maxlength="80" autocomplete="off">
-          <button type="submit" class="btn btn-primary">Save</button>
-          <button type="button" id="rename-cancel" class="btn">Cancel</button>
-        </form>
-        <p id="summary-counts" class="summary-counts"></p>
-        <p id="summary-empty" class="empty" hidden>No assignments yet.</p>
-        <ul id="summary-list" class="list"></ul>
-      </div>
-    </section>
+      </section>
+    </div>
   </main>
 
   <footer class="wrap backup">
