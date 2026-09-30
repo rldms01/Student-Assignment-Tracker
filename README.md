@@ -2,6 +2,7 @@
 
 A simple app for keeping track of which students have turned in each assignment.
 You mark each student with one click: **Done**, **Late**, **Absent**, or blank (not marked yet).
+Keep each of your classes (for example, Period 1 through Period 4) separate, each with its own students and assignments.
 
 - No account, no login, no internet needed.
 - Everything is saved in your web browser, on your own computer. Student names are never sent anywhere.
@@ -26,7 +27,17 @@ You don't need to install anything.
 
 ## 2. How to use it
 
-There are just two tabs at the top: **Assignments** and **Students**.
+At the top you'll see a **Class** picker and three tabs: **Assignments**, **Students**, and **Overview**.
+Everything on the tabs belongs to the class that's picked.
+
+### Classes
+- **Switch classes:** pick a class from the **Class** dropdown. The app remembers which class you had open last.
+- **Add a class:** click **+ New class**, type a name like "Period 2", and click **Save**.
+- **Copy a class:** pick the class to copy and click **Copy**. Name the new class, then choose what to bring over:
+  - **Assignments (with their dates):** handy when all your periods get the same work.
+  - **Students:** handy when splitting or re-creating a class.
+  Statuses are never copied. Everyone starts blank in the new class.
+- **Rename or delete a class:** use **Rename** or **Delete** next to the Class dropdown. Deleting a class removes its students, assignments, and marks, so the app asks first.
 
 ### Students tab
 - **Add a student:** type a name in the box and press **Enter** (or click **Add**). The box stays ready so you can type your whole class list quickly.
@@ -50,19 +61,27 @@ There are just two tabs at the top: **Assignments** and **Students**.
   Changes save automatically. There's no Save button to remember.
 - **Edit or delete an assignment:** use the small **Edit** and **Delete** links under the assignment name.
 
+### Overview tab
+See the whole class at once: students down the side, assignments across the top (newest on the left), and each status in its own box.
+Click a box to change it. It cycles the same way as the big buttons.
+With lots of assignments, scroll sideways inside the grid. Student names and assignment names stay in view.
+
 ---
 
 ## 3. The sample data (and how to clear it)
 
-The first time you open the app, it includes **6 sample students and 4 sample assignments** so you can try things out.
+The first time you open the app, it includes **two sample classes** ("Sample: Period 1" and "Sample: Period 2") with students and assignments so you can try things out.
 
 **To remove them:** click **Remove sample data** in the box at the top of the page.
-This removes only the sample students and assignments. Anything you added yourself stays.
+This removes only the sample classes, students, and assignments. Anything you added yourself stays.
+If you added your own students or assignments to a sample class, that class stays with just your items in it.
 The sample data won't come back.
 
-(If you rename or edit a sample student or assignment, the app treats it as yours and won't remove it.)
+(If you rename or edit a sample class, student, or assignment, the app treats it as yours and won't remove it.)
 
-**To start completely fresh later:** delete your students and assignments, or clear this site's data in your browser's settings.
+**To start completely fresh later:** delete your classes, or clear this site's data in your browser's settings.
+
+**Already using the app from before classes existed?** Your students, assignments, and marks were moved into a class called **"My Class"**. Just click **Rename** to call it "Period 1" (or whatever you like).
 
 ---
 
@@ -76,23 +95,31 @@ Your data is saved **inside the web browser you're using, on this computer**. Th
 - **School Chromebooks:** some are set up to erase everything when you sign out. To test yours: add a practice student, sign out, sign back in, and check whether the student is still there. If not, export a backup at the end of each day and import it when you start.
 
 ### Back up your data (do this every week or so)
-Scroll to the bottom of the page and click **Export to CSV**. This downloads a file named like `assignment-tracker-backup-2026-09-29.csv`. Save it somewhere safe, like Google Drive.
+Scroll to the bottom of the page and click **Export to CSV**. This downloads **one file with all your classes**, named like `assignment-tracker-backup-2026-09-29.csv`. Save it somewhere safe, like Google Drive.
 
 ### Restore from a backup, or move to another computer
-Click **Import from CSV** and choose a backup file. **This replaces everything currently in the app**, so the app asks you first.
+Click **Import from CSV** and choose a backup file. **This replaces all the classes currently in the app**, so the app asks you first.
+
+(A backup made before classes existed has no "Class" rows. Importing one adds it as a new class called "Imported class" and leaves your other classes alone.)
 
 ### Open your data in Google Sheets
 In Google Drive, click **New → File upload**, pick the backup file, then open it with Google Sheets.
-It looks like this, with one column per assignment:
+Your classes are stacked one after another, each with one column per assignment:
 
 ```
+Class,Period 1
 Assignment,Book Report,Math Worksheet
 Date,2026-09-26,2026-09-29
 Maya Lopez,Done,Late
 Jordan Kim,,Absent
+
+Class,Period 2
+Assignment,Book Report
+Date,2026-09-26
+Sam Rivera,Done
 ```
 
-You can even edit it in Sheets and bring it back. Keep the first two rows ("Assignment" and "Date"), use Done, Late, Absent, or leave the cell blank. Then choose **File → Download → Comma-separated values (.csv)** and import that file.
+You can even edit it in Sheets and bring it back. Keep each class's "Class", "Assignment", and "Date" rows, and use Done, Late, Absent, or leave the cell blank. Then choose **File → Download → Comma-separated values (.csv)** and import that file.
 
 ---
 
@@ -130,5 +157,5 @@ Note: on a free GitHub account, Pages only works for **public** projects. That's
 |---|---|
 | `index.html` | The page itself. Double-click this to open the app. |
 | `styles.css` | How it looks (colors, sizes, spacing). |
-| `app.js` | How it works (marking, saving, export and import). |
+| `app.js` | How it works (classes, marking, saving, export and import). |
 | `README.md` | These instructions. |
